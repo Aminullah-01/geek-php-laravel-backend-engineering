@@ -5,6 +5,10 @@ on:
     paths:
       - "weeks/**/geek-task/task-brief.md"
 
+permissions:
+  issues: write
+  contents: read
+
 jobs:
   create-issue:
     runs-on: ubuntu-latest
@@ -13,29 +17,63 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Create GitHub Issue
+      - name: Create or update GitHub Issue
         uses: actions/github-script@v7
         with:
           script: |
-            const path = context.payload.head_commit.modified
-              .find(p => p.includes("geek-task/task-brief.md"));
+            // Collect added/modified files from the push commits
+            const commits = context.payload.commits || [];
+            const allChangedFiles = commits.flatMap(c => [
+              ...(c.added || []),
+              ...(c.modified || []),
+              ...(c.removed || [])
+            ]);
+
+            // Find the geek task brief path under weeks/
+            const path = allChangedFiles.find(p =>
+              p.endsWith('geek-task/task-brief.md') && p.startsWith('weeks/')
+            );
 
             if (!path) {
               console.log("No Geek Task update detected.");
               return;
             }
 
-            const weekMatch = path.match(/week-(\d{2})/);
-            const week = weekMatch ? weekMatch[1] : "XX";
+            // Determine whether file was added or modified (for wording)
+            const isAdded = commits.some(c => (c.added || []).includes(path));
+            const actionType = isAdded ? 'published' : 'updated';
+
+            // Extract week number (supports one or more digits)
+            const weekMatch = path.match(/week-(\d+)/i);
+            const week = weekMatch ? weekMatch[1] : 'XX';
+
+            // Build a link to the file on the pushed branch
+            const branch = (context.ref && context.ref.replace('refs/heads/', '')) || context.payload.ref || 'main';
+            const fileUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${branch}/${path}`;
 
             const title = `Geek Task (Week ${week})`;
-            const body = `
-## 📘 Geek Task – Week ${week}
+            const labelWeek = `week-${week}`;
 
-A new Geek Task has been published or updated.
+            // Avoid creating duplicate open issues with same title & labels
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: `geek-task,${labelWeek}`,
+              per_page: 100
+            });
+
+            if (existing.data.some(i => i.title === title)) {
+              console.log(`An open issue with title "${title}" already exists. Skipping creation.`);
+              return;
+            }
+
+            const body = `## 📘 Geek Task – Week ${week}
+
+A new Geek Task has been ${actionType}.
 
 ### 📂 Task Location
-\`${path}\`
+[${path}](${fileUrl})
 
 ### ✅ Student Instructions
 - Read the task brief
@@ -52,5 +90,5 @@ Focus on logic, structure, and correct use of concepts.
               repo: context.repo.repo,
               title,
               body,
-              labels: ["geek-task", `week-${week}`]
+              labels: ['geek-task', labelWeek]
             });
