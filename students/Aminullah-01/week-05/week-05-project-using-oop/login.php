@@ -1,46 +1,44 @@
 <?php
-    // including database connection file
-    include "config.php";
+session_start();
+require "config.php";
+require_once "classes/User.php";
+require_once "classes/UserRepository.php";
+require_once "classes/AuthService.php";
 
-    if(!isset($_GET['token'])) header("location: login.php");
+$userRepo = new UserRepository($pdo);
+$auth = new AuthService($userRepo);
 
-    $now = date("y-m-d H:i:s", time());
-    $query = $db->query("SELECT id FROM users WHERE reset_token = '{$_GET['token']}' AND reset_expires > '$now'");
-    $user = mysqli_fetch_assoc($query);
+$errors = [];
+//$error = "";
+$password = "";
+$username = "";
+$fullName = "";
+$email = "";
 
-    if(!$user){
-        die("Reset link is invalid or expired");
+
+if($_SERVER['REQUEST_METHOD'] == "POST"){
+    $username = $_POST['username'] ?? '';
+    $password = $_POST['password'] ?? '';
+
+    if(empty($username)){
+        $errors['username'] = "Username is required";
     }
-    
-    if($_SERVER['REQUEST_METHOD'] == 'POST'){
-        $errors = [];
-        $newPassword = $_POST['new_password'];
-        $confirmPassword = $_POST['confirm_password'];
-         $token = $_GET['token'] ?? '';
-        
-        if(empty($token)){
-            die("Invalid or missing token");
-        }
-
-        if(empty($newPassword)){
-        
-            $errors['new_password'] = "password required";
-        }
-        if($confirmPassword !== $newPassword){
-            $errors['confirm_password'] = "password not match";
-        }
-        if(empty($errors)){
-        $passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);
-       $token = $_GET['token'] ?? null;
-        $update = $db->query("UPDATE users SET pass_word = '$passwordHash', reset_token = null, reset_expires = null WHERE reset_token = '$token'");
-        header("Location: login.php");
+    if(empty($password)){
+        $errors['password'] = "Password is required";
     }
+
+    if(empty($errors)){
+        $result = $auth->attempt($username, $password);
+        if($result['ok']){
+            $user = $result['user'];
+            $auth->login($user);
+            header("Location: dashboard.php");
+            exit;
+        } else {
+            $errors = $result['error'] ?? "Invalid login details";
+        }
     }
-    
-    
-
-    
-
+}
 ?>
 
 
@@ -51,7 +49,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Set New Password</title>
+    <title>Login</title>
 
     <style>
         :root{
@@ -123,6 +121,7 @@
             color: var(--muted);
         }
 
+        input[type="text"],
         input[type="password"]{
             width: 100%;
             padding: 11px 12px;
@@ -189,45 +188,71 @@
 <body>
     <div class="auth-wrap">
         <div class="card">
-            <h1>Set new password</h1>
-            <p class="subtitle">Enter your new password and confirm it to finish resetting.</p>
+            <h1>Welcome back</h1>
+            <p class="subtitle">Sign in with your username and password.</p>
+            <?php if(isset($result['error'])): ?>
+                    <small style = "color: #f87171;">
+                        <?php echo $result['error']; ?>
+                    </small>
+                    <?php endif; ?>
 
-            <form method="POST" action="">
+            <form method="POST" action="" autocomplete="on">
                 <div>
-                    <label for="new_password">New Password</label>
+                    <label for="email">Username</label>
                     <input
-                        type="password"
-                        id="new_password"
-                        name="new_password"
-                        placeholder="Create a strong password"
-                        autocomplete="new-password"
+                    type="text"
+                    id="email"
+                    name="username"
+                    value="<?= htmlspecialchars($username) ?>"
+                    placeholder="e.g. john_doe"
                     />
-                    <?php if(isset($errors['new_password'])): ?>
-                        <small style = "color: #f87171;">
-                            <?php echo $errors['new_password']; ?>
-                        </small>
-                        <?php endif; ?>
+
+                    <?php if(isset($errors['username'])): ?>
+                    <small style = "color: #f87171;">
+                        <?php echo $errors['username']; ?>
+                    </small>
+                    <?php endif; ?>
                 </div>
 
                 <div>
-                    <label for="confirm_password">Confirm Password</label>
+                    <label for="password">Password</label>
                     <input
                         type="password"
-                        id="confirm_password"
-                        name="confirm_password"
-                        placeholder="Re-enter your new password"
-                        autocomplete="new-password"
+                        id="password"
+                        name="password"
+                        placeholder="Your password"
+                        autocomplete="current-password"
                     />
-                    <?php if(isset($errors['confirm_password'])): ?>
-                        <small style = "color: #f87171;">
-                            <?php echo $errors['confirm_password']; ?>
-                        </small>
-                        <?php endif; ?>
+                    <?php if(isset($errors['password'])): ?>
+                    <small style = "color: #f87171;">
+                        <?php echo $errors['password']; ?>
+                    </small>
+                    <?php endif; ?>
                 </div>
 
-               
-
-                <div class="actions"> 
-                    <button type="submit">Update Password</button>
+                <div class="actions">
+                    <button type="submit">Login</button>
+                </div>
+                <div class="actions">
+                    <a href="forgot-password.php" style="
+                        display:block;
+                        text-align:center;
+                        padding: 12px 14px;
+                        border-radius: 12px;
+                        border: 1px solid rgba(255,255,255,.14);
+                        background: rgba(255,255,255,.06);
+                        color: rgba(255,255,255,.92);
+                        text-decoration: none;
+                        font-weight: 600;
+                        letter-spacing: .2px;
+                    ">Forgot Password</a>
                 </div>
             </form>
+
+            <div class="helper">
+                Don’t have an account? <a href="register.php">Create one</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

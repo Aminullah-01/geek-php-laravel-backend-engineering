@@ -1,70 +1,59 @@
 <?php
-// including database connectiong file
-include "config.php";
+require "config.php";          // this should create $pdo
+require "classes/User.php";
+require "classes/UserRepository.php";
 
+$userRepo = new UserRepository($pdo);
 
-// checking the request method
-if($_SERVER['REQUEST_METHOD'] == "POST"){
+$errors = [];
+$success = "";
 
-    $errors = [];
-    // recieved user data
-    $first_name = trim($_POST['first_name']);
-    $last_name = trim($_POST['last_name']);
-    $username = trim($_POST['username']);
-    $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
-    $password = $_POST['password'];
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
-    
-    // check if the input is empty
-    if(empty($first_name)){
-        $errors ["first_name"] = "first name can't be empty";
+    $fullName = trim($_POST["fullName"] ?? "");
+    $username = trim($_POST["username"] ?? "");
+    $email    = trim($_POST["email"] ?? "");
+    $password = $_POST["password"] ?? "";
+
+    // Validation (field-specific errors)
+    if ($fullName === "") $errors["fullName"] = "Full name is required";
+    if ($username === "") $errors["username"] = "Username is required";
+
+    if ($email === "") {
+        $errors["email"] = "Email is required";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $errors["email"] = "Invalid email format";
     }
-    if(empty($last_name)){
-        $errors ["last_name"] = "last name can't be empty";
-    }
-    if(empty($username)){
-        $errors ["username"] = "username can't be empty";
-    }
-    if(empty($email)){
-        $errors ["email"] = "email can't be empty";
-    }
-    if(empty($password)){
-        $errors ["password"] = "password can't be empty";
-    }
-    
 
+    if ($password === "") {
+        $errors["password"] = "Password is required";
+    } elseif (strlen($password) < 8) {
+        $errors["password"] = "Password must be at least 8 characters";
+    }
 
-    // check if there is not error
-    if(empty($errors)){
-        // hash password
-        $encripted_password = password_hash($password, PASSWORD_DEFAULT);
-        try{
-            // inserting the user data to database
-            $insert = $db->query("INSERT INTO users(`first_name`, `last_name`, `username`, `email`, `pass_word`) VALUES('$first_name', '$last_name', '$username', '$email', '$encripted_password')");
-             if($insert){
-            header("Location: login.php");
-            exit();
-        }
-        else{
-            echo "Data not inserted";
-        }
-        }
-       
-        catch(Exception $error){
-            echo "internal server error";
+    // Check duplicates
+    if (empty($errors) && $userRepo->existsByEmail($email)) {
+        $errors["email"] = "Email already exists";
+    }
+
+    // Save user
+    if (empty($errors)) {
+        $hash = password_hash($password, PASSWORD_DEFAULT);
+        $user = new User($fullName, $username, $email, $hash);
+
+        if ($userRepo->createUser($user)) {
+            $success = "Account created successfully. You can now log in.";
+        } else {
+            $errors["general"] = "Registration failed. Please try again.";
         }
     }
-    
-
-
 }
 
-//  including header page
-include "header.php";
+    
+
 
 
 ?>
-
 
 
 
@@ -227,37 +216,37 @@ include "header.php";
             <p class="subtitle">Create your account by filling in the details below.</p>
 
             <form method="POST" autocomplete="on">
-                <div class="grid">
-                    <div>
-                        <label for="first_name">First Name</label>
-                        <input type="text" id="first_name" name="first_name" placeholder="e.g. John" autocomplete="given-name">
-                        <?php if(isset($errors['first_name'])): ?>
-                        <small style = "color: #f87171;">
-                            <?php echo $errors['first_name']; ?>
-                        </small>
-                        <?php endif; ?>
-                    </div>
-
-                    <div>
-                        <label for="last_name">Last Name</label>
-                        <input type="text" id="last_name" name="last_name" placeholder="e.g. Doe" autocomplete="family-name">
-                        <?php if(isset($errors['last_name'])): ?>
-                        <small style = "color: #f87171">
-                            <?php echo $errors['last_name']; ?>
-                        </small>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <div>
-                    <label for="username">Username</label>
-                    <input type="text" id="username" name="username" placeholder="e.g. johndoe" autocomplete="username">
-                    <?php if(isset($errors['username'])): ?>
-                    <small style = "color: #f87171">
-                        <?php echo $errors['username']; ?>
-                    </small>
+                <?php if ($success): ?>
+                    <p style="color:green;"><?= $success ?></p>
                     <?php endif; ?>
+
+                    <?php if (isset($errors["general"])): ?>
+                    <p style="color:red;"><?= $errors["general"] ?></p>
+                    <?php endif; ?>
+                <div class="grid">
+
+                    <div>
+                        <label for="first_name">Full Name</label>
+                        <input type="text" id="first_name" name="fullName" placeholder="e.g. John Doe" autocomplete="given-name">
+                        <?php if(isset($errors['fullName'])): ?>
+                        <small style = "color: #f87171;">
+                            <?php echo $errors['fullName']; ?>
+                        </small>
+                        <?php endif; ?>
+                    </div>
+
+                    <div>
+                        <label for="last_name">Username</label>
+                        <input type="text" id="last_name" name="username" placeholder="e.g. johndoe" autocomplete="username">
+                        <?php if(isset($errors['username'])): ?>
+                        <small style = "color: #f87171">
+                            <?php echo $errors['username']; ?>
+                        </small>
+                        <?php endif; ?>
+                    </div>
                 </div>
+
+                
 
                 <div>
                     <label for="email">Email</label>
@@ -291,5 +280,3 @@ include "header.php";
     </div>
 </body>
 </html>
-
-<?php include 'footer.php'; ?>
