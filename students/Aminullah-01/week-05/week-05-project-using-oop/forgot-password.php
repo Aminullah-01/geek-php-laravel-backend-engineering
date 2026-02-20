@@ -1,57 +1,40 @@
 <?php
-    // including database connection file
-    include "config.php";
+require "config.php";
+require_once "classes/User.php";
+require_once "classes/UserRepository.php";
+require_once "classes/PasswordResetService.php";
 
-    if(!isset($_GET['token'])) header("location: login.php");
 
-    $now = date("y-m-d H:i:s", time());
-    $query = $db->query("SELECT id FROM users WHERE reset_token = '{$_GET['token']}' AND reset_expires > '$now'");
-    $user = mysqli_fetch_assoc($query);
+$userRepo = new UserRepository($pdo);
+$resetService = new PasswordResetService($userRepo);
+$email = trim($_POST["email"] ?? "");
+$errors = [];
+$message = "";
+$link = "";
 
-    if(!$user){
-        die("Reset link is invalid or expired");
-    }
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
     
-    if($_SERVER['REQUEST_METHOD'] == 'POST'){
-        $errors = [];
-        $newPassword = $_POST['new_password'];
-        $confirmPassword = $_POST['confirm_password'];
-         $token = $_GET['token'] ?? '';
-        
-        if(empty($token)){
-            die("Invalid or missing token");
+
+    if ($email === "") {
+        $errors["email"] = "Email is required";
+    } else {
+        $result = $resetService->request($email);
+        $message = $result["message"];
+
+        // DEV ONLY: show link so you can test without email sending
+        if (isset($result["token"])) {
+            $link = "reset-password.php?token=" . $result["token"];
         }
-
-        if(empty($newPassword)){
-        
-            $errors['new_password'] = "password required";
-        }
-        if($confirmPassword !== $newPassword){
-            $errors['confirm_password'] = "password not match";
-        }
-        if(empty($errors)){
-        $passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);
-       $token = $_GET['token'] ?? null;
-        $update = $db->query("UPDATE users SET pass_word = '$passwordHash', reset_token = null, reset_expires = null WHERE reset_token = '$token'");
-        header("Location: login.php");
     }
-    }
-    
-    
-
-    
-
+}
 ?>
-
-
-
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Set New Password</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password Reset</title>
 
     <style>
         :root{
@@ -83,9 +66,7 @@
             padding: 28px 16px;
         }
 
-        .auth-wrap{
-            width: min(520px, 100%);
-        }
+        .auth-wrap{ width: min(520px, 100%); }
 
         .card{
             width: 100%;
@@ -123,7 +104,7 @@
             color: var(--muted);
         }
 
-        input[type="password"]{
+        input[type="email"]{
             width: 100%;
             padding: 11px 12px;
             border-radius: 12px;
@@ -141,10 +122,7 @@
             box-shadow: 0 0 0 4px rgba(124,58,237,.20);
         }
 
-        .actions{
-            margin-top: 4px;
-            display: grid;
-        }
+        .actions{ margin-top: 4px; }
 
         button[type="submit"]{
             appearance: none;
@@ -177,9 +155,7 @@
             border-bottom: 1px solid rgba(255,255,255,.25);
         }
 
-        .helper a:hover{
-            border-bottom-color: rgba(255,255,255,.55);
-        }
+        .helper a:hover{ border-bottom-color: rgba(255,255,255,.55); }
 
         @media (max-width: 520px){
             .card{ padding: 20px; }
@@ -189,45 +165,49 @@
 <body>
     <div class="auth-wrap">
         <div class="card">
-            <h1>Set new password</h1>
-            <p class="subtitle">Enter your new password and confirm it to finish resetting.</p>
+            <h1>Reset password</h1>
+            <p class="subtitle">Enter your email and we’ll send you reset instructions.</p>
 
             <form method="POST" action="">
                 <div>
-                    <label for="new_password">New Password</label>
+                    <label for="email">Email</label>
                     <input
-                        type="password"
-                        id="new_password"
-                        name="new_password"
-                        placeholder="Create a strong password"
-                        autocomplete="new-password"
+                        type="email"
+                        id="email"
+                        name="email"
+                        placeholder="e.g. john@example.com"
+                        autocomplete="email"
                     />
-                    <?php if(isset($errors['new_password'])): ?>
-                        <small style = "color: #f87171;">
-                            <?php echo $errors['new_password']; ?>
-                        </small>
-                        <?php endif; ?>
+                    <?php if(isset($errors['email'])): ?>
+                    <small style = "color: #f87171;">
+                        <?php echo $errors['email']; ?>
+                    </small>
+                    <?php endif; ?>
                 </div>
 
-                <div>
-                    <label for="confirm_password">Confirm Password</label>
-                    <input
-                        type="password"
-                        id="confirm_password"
-                        name="confirm_password"
-                        placeholder="Re-enter your new password"
-                        autocomplete="new-password"
-                    />
-                    <?php if(isset($errors['confirm_password'])): ?>
-                        <small style = "color: #f87171;">
-                            <?php echo $errors['confirm_password']; ?>
-                        </small>
-                        <?php endif; ?>
-                </div>
 
-               
+               <input type="hidden" name="token" value="<?php echo htmlspecialchars($_GET['token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
 
-                <div class="actions"> 
-                    <button type="submit">Update Password</button>
+                <div class="actions">
+                    <button type="submit">Reset Password</button>
                 </div>
             </form>
+
+            <?php if (!empty($message)): ?>
+            <p style="color: #22c55e;"><?= htmlspecialchars($message) ?></p>
+            <?php endif; ?>
+
+            <?php if (!empty($link)): ?>
+              <p><b>DEV Reset Link:</b> <a href="<?= htmlspecialchars($link) ?>"><?= htmlspecialchars($link) ?></a></p>
+            <?php endif; ?>
+
+
+            <div class="helper">
+                Remembered your password? <a href="login.php">Back to login</a>
+            </div>
+        </div>
+    </div>
+
+    
+</body>
+</html>

@@ -1,47 +1,52 @@
 <?php
-    // including database connection file
-    include "config.php";
+require "config.php";
+require_once "classes/User.php";
+require_once "classes/UserRepository.php";
+require_once "classes/PasswordResetService.php";
 
-    if(!isset($_GET['token'])) header("location: login.php");
+$userRepo = new UserRepository($pdo);
+$resetService = new PasswordResetService($userRepo);
 
-    $now = date("y-m-d H:i:s", time());
-    $query = $db->query("SELECT id FROM users WHERE reset_token = '{$_GET['token']}' AND reset_expires > '$now'");
-    $user = mysqli_fetch_assoc($query);
+$token = trim($_GET["token"] ?? ($_POST["token"] ?? ""));
+$errors = [];
+$success = "";
+$invalid = false;
 
-    if(!$user){
-        die("Reset link is invalid or expired");
+// If token missing, block immediately
+if ($token === "") {
+    $invalid = true;
+}
+
+// GET: validate token before showing form
+if (!$invalid && $_SERVER["REQUEST_METHOD"] === "GET") {
+    $check = $resetService->validate($token);
+    if (!$check["ok"]) $invalid = true;
+}
+
+// POST: handle reset
+if (!$invalid && $_SERVER["REQUEST_METHOD"] === "POST") {
+    $newPassword = $_POST["new_password"] ?? "";
+    $confirm     = $_POST["confirm_password"] ?? "";
+
+    if ($newPassword === "") $errors["new_password"] = "New password is required";
+    if ($confirm === "") $errors["confirm_password"] = "Confirm password is required";
+    if ($newPassword !== "" && $confirm !== "" && $newPassword !== $confirm) {
+        $errors["confirm_password"] = "Passwords do not match";
     }
-    
-    if($_SERVER['REQUEST_METHOD'] == 'POST'){
-        $errors = [];
-        $newPassword = $_POST['new_password'];
-        $confirmPassword = $_POST['confirm_password'];
-         $token = $_GET['token'] ?? '';
-        
-        if(empty($token)){
-            die("Invalid or missing token");
-        }
 
-        if(empty($newPassword)){
-        
-            $errors['new_password'] = "password required";
+    if (empty($errors)) {
+        $result = $resetService->reset($token, $newPassword);
+
+        if ($result["ok"]) {
+            $success = "Password reset successful. You can now log in.";
+        } else {
+            $invalid = true;
+            $errors["general"] = $result["error"] ?? "Invalid or expired reset link.";
         }
-        if($confirmPassword !== $newPassword){
-            $errors['confirm_password'] = "password not match";
-        }
-        if(empty($errors)){
-        $passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);
-       $token = $_GET['token'] ?? null;
-        $update = $db->query("UPDATE users SET pass_word = '$passwordHash', reset_token = null, reset_expires = null WHERE reset_token = '$token'");
-        header("Location: login.php");
     }
-    }
-    
-    
-
-    
-
+}
 ?>
+
 
 
 
@@ -192,6 +197,22 @@
             <h1>Set new password</h1>
             <p class="subtitle">Enter your new password and confirm it to finish resetting.</p>
 
+            <?php if ($invalid): ?>
+    <p style="color:red;">Invalid or expired reset link.</p>
+    <a href="forgot-password.php">Request a new link</a>
+    <?php exit; ?>
+    <?php endif; ?>
+
+    <?php if ($success): ?>
+        <p style="color:green;"><?= htmlspecialchars($success) ?></p>
+        <a href="login.php">Go to login</a>
+        <?php exit; ?>
+    <?php endif; ?>
+
+<?php if (isset($errors["general"])): ?>
+  <p style="color:red;"><?= htmlspecialchars($errors["general"]) ?></p>
+<?php endif; ?>
+
             <form method="POST" action="">
                 <div>
                     <label for="new_password">New Password</label>
@@ -208,6 +229,8 @@
                         </small>
                         <?php endif; ?>
                 </div>
+                <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
+
 
                 <div>
                     <label for="confirm_password">Confirm Password</label>
