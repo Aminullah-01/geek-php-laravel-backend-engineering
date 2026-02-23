@@ -3,7 +3,7 @@ class Database {
     private $host = "localhost";
     private $db_name = "cruid";
     private $username = "root";
-    private $password = "";
+    private $password = "37858023";
     public $conn;
 
     public function getConnection() {
